@@ -16,6 +16,7 @@ extern "C" int* __errno() {
 #endif
 
 extern "C"
+__attribute__((used))
 void* memset(void* vdest, int ch, size_t size)
 {
 #ifndef NATIVE_MEM_SYSCALLS

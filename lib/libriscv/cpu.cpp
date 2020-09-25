@@ -95,10 +95,7 @@ namespace riscv
 	{
 #ifdef RISCV_DEBUG
 		this->break_checks();
-#endif
-		const auto instruction = this->read_next_instruction();
 
-#ifdef RISCV_DEBUG
 		const auto& handler = this->decode(instruction);
 		// instruction logging
 		if (UNLIKELY(machine().verbose_instructions))
@@ -110,27 +107,37 @@ namespace riscv
 		// execute instruction
 		handler.handler(*this, instruction);
 #else
+		int i = 0;
+		for (; i < 100 && !machine().stopped(); i++)
+		{
+			const auto instruction = this->read_next_instruction();
 # ifdef RISCV_INSTR_CACHE
-		// retrieve instructions directly from the constant cache
-		// WARNING: the contract between read_next_instruction and this
-		// is that any jump traps must return to the caller, and be re-
-		// validated, otherwise this code will read garbage data!
-		auto& cache_entry =
-			machine().memory.get_decoder_cache()[this->pc() / DecoderCache<Page::SIZE>::DIVISOR];
+			// retrieve instructions directly from the constant cache
+			// WARNING: the contract between read_next_instruction and this
+			// is that any jump traps must return to the caller, and be re-
+			// validated, otherwise this code will read garbage data!
+			auto& cache_entry =
+				machine().memory.get_decoder_cache()[this->pc() / DecoderCache<Page::SIZE>::DIVISOR];
 #ifndef RISCV_INSTR_CACHE_PREGEN
-		if (UNLIKELY(!cache_entry)) {
-			cache_entry = this->decode(instruction).handler;
-		}
+			if (UNLIKELY(!cache_entry)) {
+				cache_entry = this->decode(instruction).handler;
+			}
 #endif
-		// execute instruction
-		cache_entry(*this, instruction);
+			// execute instruction
+			cache_entry(*this, instruction);
 # else
-		// decode & execute instruction directly
-		this->execute(instruction);
+			// decode & execute instruction directly
+			this->execute(instruction);
 # endif
-#endif
+			// increment PC
+			if constexpr (compressed_enabled)
+				registers().pc += instruction.length();
+			else
+				registers().pc += 4;
+		}
 		// increment instruction counter
-		this->m_counter++;
+		this->m_counter += i;
+#endif
 
 #ifdef RISCV_DEBUG
 		if (UNLIKELY(machine().verbose_registers))
@@ -141,13 +148,14 @@ namespace riscv
 				printf("%s\n", registers().flp_to_string().c_str());
 			}
 		}
-#endif
-
+		// increment instruction counter
+		this->m_counter ++;
 		// increment PC
 		if constexpr (compressed_enabled)
 			registers().pc += instruction.length();
 		else
 			registers().pc += 4;
+#endif
 	}
 
 	template<int W> __attribute__((cold))
